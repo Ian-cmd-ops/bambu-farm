@@ -1,484 +1,213 @@
-# Cannot print with latest firmware
-> [!IMPORTANT]  
-> https://wiki.bambulab.com/en/p1/manual/p1p-firmware-release-history
->
-> Bambulab decided to block printing via MQTT unless you enable lanmode only.
->
-> Consider downgrading firmware Reference [!142](https://github.com/TFyre/bambu-farm/issues/142)
->
-> **OR**
->
-> Check the [Cloud Section](#cloud-section) about enabling cloud mode
+# 🖨️ Bambu Farm — Bellingham Makerspace Fork
 
+A web-based dashboard to monitor and manage multiple Bambu Lab printers (A1, P1, X1 series) using MQTT / FTP / RTSP.
 
-# Bambu Farm
-[![ko-fi](https://img.shields.io/static/v1?label=Support+me+on&message=Ko-fi&logo=ko-fi&color=%23FF5E5B&style=for-the-badge)](https://ko-fi.com/tfyre)
-[![GitHub](https://img.shields.io/static/v1?label=Sponsor+me+on&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86&style=for-the-badge)](https://github.com/sponsors/TFyre)
+**Forked from [TFyre/bambu-farm](https://github.com/TFyre/bambu-farm) v1.8.0**
 
-Web based application to monitor multiple bambu printers using mqtt / ftp / rtsp (**no custom firmware required**)
+---
 
-Technologies used:
-* Java 21 https://www.azul.com/
-* Quarkus https://quarkus.io/
-* Vaadin https://vaadin.com/
+> [!IMPORTANT]
+> **Firmware Blockade:** Bambu Lab has started blocking printing via MQTT unless LAN Mode is enabled. If you cannot print, consider downgrading your firmware or enabling Cloud Mode in the config.
 
-# Features / Supported Devices
+> [!WARNING]
+> **X1C Compatibility:** FTPS connections for the X1C require SSL Session Reuse. Set `bambu.use-bouncy-castle=true` in your `.env` and use the JVM flag `-Djdk.tls.useExtendedMasterSecret=false`.
 
-| Feature | A1 | A1 Mini | P1P | P1S | X1C|
-|--|:--:|:--:|:--:|:--:|:--:|
-|**Remote View**|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|<ul><li>[x] <sup>3</sup></li></ul>|
-|**Upload to SD card**|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|<ul><li>[x] <sup>2</sup></li></ul>|
-|**Print .3mf from SD card**<sup>1</sup>|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|<ul><li>[x] <sup>2</sup></li></ul>|
-|**Print .gcode from SD card**|?|?|?|?|?|
-|**Batch Printing**<sup>4</sup>|?|?|?|<ul><li>[x] </li></ul>|<ul><li>[x] <sup>2</sup></li></ul>|
-|**AMS**|?|?|?|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|
-|**Send Custom GCode**|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|<ul><li>[x] </li></ul>|
+---
 
-1. **Currently only .3mf sliced projects are supported.**
-  > In Bambu Studio/Orca slicer, make sure to slice the place and then use the "File -> Export -> Export plate sliced file". This creates a `.3mf` project with embedded `.gcode` plate.
-2. **FTPS Connections needs SSL Session Reuse via [Bouncy Castle](#bouncy-castle)**
-> Without enabling bouncy castle, you will see `552 SSL connection failed: session resuse required`
-3. Getting the **LiveView** to work requires additional software. For more details check the [docker/bambu-liveview](docker/bambu-liveview) README.
-4. **Batch Priting** allows you to upload a single/multi sliced .3mf and select which plate to send to multiple printers, each with their own filament mapping.
+## What This Fork Adds
 
-# Screenshots
+This fork adds a **database-backed user management system** so Makerspace admins can create, edit, and remove user accounts from the web UI — no SSH or service restarts required.
 
-* Dashboard
-![Desktop browser](/docs/bambufarm1.jpg)
-* Batch printing
-![Batch Printing](/docs/batchprint.png)
+### Implemented Features
 
-*More screenshots in [docs](/docs)*
+| Feature | Status | Description |
+|---------|--------|-------------|
+| User Management UI | ✅ Done | Admin-only Vaadin page at `/admin/users` for CRUD operations |
+| H2 Database Storage | ✅ Done | Users stored in `bambu-users.mv.db` via Hibernate ORM Panache |
+| Auto-Migration | ✅ Done | Existing `.env` users imported to DB on first boot |
+| Bcrypt Password Hashing | ✅ Done | All passwords stored as bcrypt hashes, never plaintext |
+| Password Policy | ✅ Done | Minimum 10 characters, requires uppercase, lowercase, digit, special character |
+| Username Validation | ✅ Done | 3-32 chars, alphanumeric plus `.` `-` `_` only |
+| Login Rate Limiting | ✅ Done | 5 failed attempts triggers 5-minute lockout per account |
+| Audit Logging | ✅ Done | All auth events and user changes logged with `AUDIT:` / `SECURITY:` prefixes |
+| Backward Compatibility | ✅ Done | All existing `.env` configurations continue to work unchanged |
 
-# I just want to run it
+### Not Implemented (Yet)
 
-* Make sure you have Java 21 installed, verify with `java -version`
+These features are **not present** in this fork despite what previous documentation may have claimed:
+
+- ❌ H2 database encryption at rest (AES cipher)
+- ❌ SSL/TLS termination (HTTPS on port 8443)
+- ❌ `start-farm.sh` atomic launcher script
+- ❌ Obico / AI failure detection integration
+- ❌ SMS / Twilio notifications
+- ❌ Double opt-in consent workflow
+- ❌ Progressive tarpitting (exponential backoff) — current implementation uses flat lockout
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- **Java 21 LTS** (OpenJDK, Zulu, or Temurin)
+- **Maven** (for building from source)
+
+### Build
+
 ```bash
-[user@build:~]# java -version
-openjdk version "21.0.1" 2023-10-17 LTS
-OpenJDK Runtime Environment Zulu21.30+15-CA (build 21.0.1+12-LTS)
-OpenJDK 64-Bit Server VM Zulu21.30+15-CA (build 21.0.1+12-LTS, mixed mode, sharing)
-```
-* Download the latest `bambu-web-*-runner.jar` from [releases](https://github.com/TFyre/bambu-farm/releases/latest) into a new folder (or use the 1 liner below):
-```bash
-curl -s https://api.github.com/repos/tfyre/bambu-farm/releases/latest \
-  | grep browser_download_url | cut -d'"' -f4 | xargs curl -LO
-```
-* Create a `.env` config file from [Minimal Config](#minimal-config)
-  * *Check out the [Full Config Options](#full-config-options) section if you want to tweak some settings*
-* Run with `java -jar bambu-web-x.x.x-runner.jar`
-```bash
-[user@build:~]# java -jar bambu-web-1.0.1-runner.jar
-__  ____  __  _____   ___  __ ____  ______
- --/ __ \/ / / / _ | / _ \/ //_/ / / / __/
- -/ /_/ / /_/ / __ |/ , _/ ,< / /_/ /\ \
---\___\_\____/_/ |_/_/|_/_/|_|\____/___/
-2024-01-23 08:49:05,586 INFO  [io.und.servlet] (main) Initializing AtmosphereFramework
-...
-...
-2024-01-23 08:49:05,666 INFO  [com.vaa.flo.ser.DefaultDeploymentConfiguration] (main) Vaadin is running in production mode.
-2024-01-23 08:49:05,912 INFO  [org.apa.cam.qua.cor.CamelBootstrapRecorder] (main) Bootstrap runtime: org.apache.camel.quarkus.main.CamelMainRuntime
-2024-01-23 08:49:05,913 INFO  [org.apa.cam.mai.MainSupport] (main) Apache Camel (Main) 4.2.0 is starting
-...
-...
-2024-01-23 08:49:06,029 INFO  [com.tfy.bam.cam.CamelController] (main) configured
-2024-01-23 08:49:06,074 INFO  [org.apa.cam.imp.eng.AbstractCamelContext] (main) Apache Camel 4.2.0 (camel-1) is starting
-2024-01-23 08:49:06,081 INFO  [org.apa.cam.imp.eng.AbstractCamelContext] (main) Routes startup (total:10 started:0 disabled:10)
-...
-...
-2024-01-23 08:49:06,085 INFO  [org.apa.cam.imp.eng.AbstractCamelContext] (main) Apache Camel 4.2.0 (camel-1) started in 10ms (build:0ms init:0ms start:10ms)
-2024-01-23 08:49:06,193 INFO  [io.quarkus] (main) bambu-web 1.0.1 on JVM (powered by Quarkus 3.6.6) started in 1.421s. Listening on: http://0.0.0.0:8084
-2024-01-23 08:49:06,194 INFO  [io.quarkus] (main) Profile prod activated.
-2024-01-23 08:49:06,194 INFO  [io.quarkus] (main) Installed features: [camel-core, camel-direct, camel-paho, cdi, resteasy-reactive, resteasy-reactive-jackson, 
-scheduler, security, servlet, smallrye-context-propagation, vaadin-quarkus, vertx, websockets, websockets-client]
-```
-* If starting correctly, it will show `Routes startup (total:10 started:0 disabled:10)` with a number that is 2x your printer count
-* Head over to http://127.0.0.1:8080 and log in with `admin` / `admin`
-
-# Building & Running
-
-Building:
-```bash
+git clone https://github.com/BellinghamMakerspace/bambu-farm.git
+cd bambu-farm
 mvn clean install -Pproduction
 ```
 
-Create a new directory and copy `bambu/target/bambu-web-1.0.0-runner.jar` into it, example:
-```bash
-tfyre@fsteyn-pc:/mnt/c/bambu-farm$ ls -al
-total 64264
-drwxrwxrwx 1 tfyre tfyre     4096 Jan 17 16:47 .
-drwxrwxrwx 1 tfyre tfyre     4096 Jan 18 20:42 ..
--rw-rw-rw- 1 tfyre tfyre     4557 Jan 18 14:01 .env
--rw-rw-rw- 1 tfyre tfyre 65796193 Jan 18 20:38 bambu-web-1.0.0-runner.jar
-```
+### Configure
 
-Running
-```bash
-java -jar bambu-web-1.0.0-runner.jar
-```
+Create a `.env` file in the same directory as the JAR:
 
-You can now access it via http://127.0.0.1:8080 (username: admin / password: admin)
-
-# Running as a service
-
-Refer to [README.service.md](/docs/README.service.md)
-
-# Example Config
-
-## Minimal config
-
-**!!Remeber to replace `REPLACE_*` fields!!**
-
-Create an `.env` file with  the following config:
 ```properties
 quarkus.http.host=0.0.0.0
 quarkus.http.port=8080
 
-bambu.printers.myprinter1.device-id=REPLACE_WITH_DEVICE_SERIAL
-bambu.printers.myprinter1.access-code=REPLACE_WITH_DEVICE_ACCESSCODE
-bambu.printers.myprinter1.ip=REPLACE_WITH_DEVICE_IP
-
-bambu.users.admin.password=admin
+# Admin account (will be auto-migrated to database on first boot)
+bambu.users.admin.password=CHANGE_ME_TO_A_STRONG_PASSWORD
 bambu.users.admin.role=admin
+
+# Printers
+bambu.printers.p1p.device-id=SERIAL_NUMBER
+bambu.printers.p1p.access-code=ACCESS_CODE
+bambu.printers.p1p.ip=192.168.1.XXX
+bambu.printers.p1p.model=p1p
 ```
 
-## Full Config Options
-
-**All default options are displayed (only add to the config if you want to change)**
-
-### Dark Mode
-```properties
-# Gobal
-bambu.dark-mode=false
-# Per user (will default to global if omitted)
-bambu.users.myUserName.dark-mode=false
-```
-
-### Printer section
-```properties
-bambu.printers.myprinter1.enabled=true
-bambu.printers.myprinter1.name=Name With Spaces
-bambu.printers.myprinter1.device-id=REPLACE_WITH_DEVICE_SERIAL
-bambu.printers.myprinter1.username=bblp
-bambu.printers.myprinter1.access-code=REPLACE_WITH_DEVICE_ACCESSCODE
-bambu.printers.myprinter1.ip=REPLACE_WITH_DEVICE_IP
-bambu.printers.myprinter1.use-ams=true
-bambu.printers.myprinter1.timelapse=true
-bambu.printers.myprinter1.bed-levelling=true
-bambu.printers.myprinter1.flow-calibration=true
-bambu.printers.myprinter1.vibration-calibration=true
-bambu.printers.myprinter1.model=unknown / a1 / a1mini / p1p / p1s / x1c
-bambu.printers.myprinter1.mqtt.port=8883
-bambu.printers.myprinter1.mqtt.url=ssl://${bambu.printers.myprinter1.ip}:${bambu.printers.myprinter1.mqtt.port}
-bambu.printers.myprinter1.mqtt.report-topic=device/${bambu.printers.myprinter1.device-id}/report
-bambu.printers.myprinter1.mqtt.request-topic=device/${bambu.printers.myprinter1.device-id}/request
-#Requesting full status interval
-bambu.printers.myprinter1.mqtt.full-status=10m
-bambu.printers.myprinter1.ftp.port=990
-bambu.printers.myprinter1.ftp.url=ftps://${bambu.printers.myprinter1.ip}:${bambu.printers.myprinter1.ftp.port}
-bambu.printers.myprinter1.ftp.log-commands=false
-bambu.printers.myprinter1.stream.port=6000
-bambu.printers.myprinter1.stream.live-view=false
-bambu.printers.myprinter1.stream.url=ssl://${bambu.printers.myprinter1.ip}:${bambu.printers.myprinter1.stream.port}
-#Restart stream if no images received interval
-bambu.printers.myprinter1.stream.watch-dog=5m
-```
-
-### Cloud Section
-
-Enable MQTT connection via cloud instead of directly to printer. 
-
-The access userid and token can be fetched from your browser cookies or a multi liner curl
-```bash
-export MY_USERNAME=fixme@fixme.com
-export MY_PASSWORD=fixme
-
-# Request verification code
-curl -sS --fail -X POST -H 'Content-Type: application/json' -d "{\"account\":\"${MY_USERNAME}\",\"password\":\"${MY_PASSWORD}\"}" https://api.bambulab.com/v1/user-service/user/login | jq
-```
-
-Output:
-```json
-{
-  "accessToken": "",
-  "refreshToken": "",
-  "expiresIn": 0,
-  "refreshExpiresIn": 0,
-  "tfaKey": "",
-  "accessMethod": "",
-  "loginType": "verifyCode"
-}
-```
+### Run
 
 ```bash
-# Check email for verification code
-export MY_CODE=1234
-curl -sS --fail -X POST -H 'Content-Type: application/json' -d "{\"account\":\"${MY_USERNAME}\",\"code\":\"${MY_CODE}\"}" https://api.bambulab.com/v1/user-service/user/login | jq
+java -jar bambu-web-1.8.0-runner.jar
 ```
 
-Output:
-```json
-{
-  "accessToken": "AA...",
-  "refreshToken": "SAME_AS_ACCESS_TOKEN",
-  "expiresIn": 7776000,
-  "refreshExpiresIn": 7776000,
-  "tfaKey": "",
-  "accessMethod": "",
-  "loginType": ""
-}
+Open `http://YOUR_IP:8080` and log in. Admin users can access **User Management** from the navigation drawer.
+
+### Alpine Linux / OpenRC Service
+
+See the upstream [README.service.md](https://github.com/TFyre/bambu-farm/blob/main/README.service.md) for service setup. Key addition for this fork: ensure the init script includes `directory="/opt/bambu-farm"` so Quarkus can find the `.env` file.
+
+---
+
+## User Management
+
+### Adding Users via Web UI
+
+1. Log in as an admin
+2. Open the hamburger menu → **User Management**
+3. Click **Add User**
+4. Set username, password (must meet policy), and role
+
+### Password Policy
+
+Passwords must meet **all** of the following:
+- At least 10 characters
+- At least one uppercase letter (A-Z)
+- At least one lowercase letter (a-z)
+- At least one digit (0-9)
+- At least one special character
+
+### Rate Limiting
+
+After 5 failed login attempts, the account is locked for 5 minutes. This resets on successful login. Lockout state is tracked in memory (resets on service restart).
+
+### Database Backup
+
+User data is stored in `bambu-users.mv.db` in the working directory. Back this file up regularly. If you lose it, users will be re-migrated from `.env` on next boot (but any users created via the web UI will be lost).
+
+---
+
+## Configuration Reference
+
+See the upstream [TFyre/bambu-farm README](https://github.com/TFyre/bambu-farm#readme) for the full configuration reference including printer options, AMS settings, cloud mode, and MQTT configuration.
+
+### Additional Properties (This Fork)
+
+These are added to `application.properties` inside the JAR and generally don't need to be changed:
+
+```properties
+quarkus.datasource.db-kind=h2
+quarkus.datasource.jdbc.url=jdbc:h2:file:./bambu-users;AUTO_RECONNECT=TRUE
+quarkus.hibernate-orm.database.generation=update
 ```
+
+---
+
+## Troubleshooting
+
+### "Port 8080 in use"
+
+A previous instance is still running:
 
 ```bash
-# Grab the access Token
-export MY_TOKEN=AA...
-
-# Grab username (uid) from here
-curl -sS --fail  -H "Authorization: Bearer ${MY_TOKEN}" https://api.bambulab.com/v1/design-user-service/my/preference | jq '{"username": ("u_" + (.uid | tostring))}'
+# Linux
+sudo fuser -k 8080/tcp
+# or
+pkill -9 -f bambu-web
 ```
 
-Output:
-```json
-{
-  "username": "u_12345"
-}
+### Service starts but .env not loaded
+
+Quarkus reads `.env` from the **current working directory** only. If running as a service, ensure the init script sets `directory="/opt/bambu-farm"` (OpenRC) or `WorkingDirectory=/opt/bambu-farm` (systemd).
+
+### Users not showing in User Management
+
+Users are migrated from `.env` to the database on first startup. If you added users to `.env` after the initial boot, they won't appear until you either restart the service or use the web UI to create them.
+
+---
+
+## Architecture
+
+```
+Login Request
+    → DatabaseIdentityProvider (checks H2 database)
+        → Success? → Authenticated
+        → Fail? → throws AuthenticationFailedException
+    → TFyreIdentityProvider (checks .env users)
+        → Success? → Authenticated  
+        → Fail? → 401 Unauthorized
 ```
 
-Configuration:
+### New Files (vs upstream)
 
-```properties
-bambu.cloud.enabled=true
-bambu.cloud.username=u_12345
-bambu.cloud.token=AA...
+```
+bambu/src/main/java/com/tfyre/bambu/user/
+├── DatabaseIdentityProvider.java   # Quarkus IdentityProvider for DB auth
+├── UserEntity.java                 # JPA entity
+├── UserRepository.java             # Panache repository
+└── UserService.java                # Business logic, password policy, rate limiting
+
+bambu/src/main/java/com/tfyre/bambu/view/admin/
+└── UserManagementView.java         # Vaadin admin UI
 ```
 
-### User Section
+### Modified Files (vs upstream)
 
-**Remember to encrypt your passwords with bcrypt (eg https://bcrypt-generator.com/)**
+- `bambu/pom.xml` — added `quarkus-hibernate-orm-panache` and `quarkus-jdbc-h2` dependencies
+- `bambu/src/main/resources/application.properties` — added H2 datasource config
+- `bambu/src/main/java/com/tfyre/bambu/MainLayout.java` — added User Management to navigation
 
-Current roles supported:
+---
 
-* `admin` - full access
-* `normal` - only dashboard with readonly access
+## Contributing
 
-```properties
-# https://bcrypt-generator.com/
-#bambu.users.REPLACE_WITH_USERNAME.password=REPLACE_WITH_PASSWORD
+1. Fork this repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Test your changes locally (build + run + verify)
+4. Open a Pull Request with a clear description of what you changed and why
 
-# Insecure version:
-#bambu.users.myUserName.password=myPassword
-# Secure version:
-bambu.users.myUserName.password=$2a$12$GtP15HEGIhqNdeKh2tFguOAg92B3cPdCh91rj7hklM7aSOuTMh1DC 
-bambu.users.myUserName.role=admin
-bambu.users.myUserName.dark-mode=false
+---
 
-#Guest account with readonly role
-bambu.users.guest.password=guest
-bambu.users.guest.role=normal
+## License
 
-# Skip users and automatically login as admin (default: false)
-bambu.auto-login=true
-```
+[Apache-2.0](LICENSE.txt) — same as the upstream project.
 
-### Batch Print Section
-Default batch printing options is below:
+## Acknowledgments
 
-```properties
-bambu.batch-print.skip-same-size=true
-bambu.batch-print.timelapse=true
-bambu.batch-print.bed-levelling=true
-bambu.batch-print.flow-calibration=true
-bambu.batch-print.vibration-calibration=true
-bambu.batch-print.enforce-filament-mapping=true
-```
-
-### Preheat
-
-Default preheat configuration is below:
-```properties
-bambu.preheat[0].name=Off 0/0
-bambu.preheat[0].bed=0
-bambu.preheat[0].nozzle=0
-bambu.preheat[1].name=PLA 55/220
-bambu.preheat[1].bed=55
-bambu.preheat[1].nozzle=220
-bambu.preheat[2].name=ABS 90/270
-bambu.preheat[2].bed=90
-bambu.preheat[2].nozzle=270
-```
-
-### Remote View
-
-Remote View is the ability to remotely view or stream the printer's camera.
-
-```properties
-# defaults to true, when false, disables remote view globally
-bambu.remote-view=true
-
-# defaults to true, when false, disables remote view for dashboard, but will still be available in detail view
-bambu.dashboard.remote-view=true
-
-# defaults to true, when false, disables per printer
-bambu.printers.myprinter1.stream.enable=true
-```
-
-
-### Live View
-
-Live View is the ability to remotely stream the X1C camera (or any other webcam) and requires Remote View to be enabled.
-
-> [!NOTE]
-> Getting the **LiveView** to work requires additional software. For more details check the [docker/bambu-liveview](docker/bambu-liveview) README.
-
-
-```properties
-bambu.live-view-url=/_camerastream/
-
-# For each printer:
-bambu.printers.PRINTER_ID.stream.live-view=true
-
-# Default LiveView URL
-bambu.printers.PRINTER_ID.stream.url=${bambu.live-view-url}${PRINTER_ID}
-
-# Custom LiveView URL
-bambu.printers.PRINTER_ID.stream.url=https://my_stream_domain.com/mystream
-# 
-```
-
-
-### Bouncy Castle
-`X1C` needs SSL Session Reuse so that SD Card functionality can work. Reference: https://stackoverflow.com/a/77587106/23289205
-
-Without this you will see `552 SSL connection failed: session resuse required`.
-
-Add to `.env`:
-```properties
-bambu.use-bouncy-castle=true
-```
-Add JVM startup flag:
-
-bash / cmd:
-```bash
-java -Djdk.tls.useExtendedMasterSecret=false -jar bambu-web-x.x.x-runner.jar
-```
-
-powershell:
-```powershell
-java "-Djdk.tls.useExtendedMasterSecret=false" -jar bambu-web-x.x.x-runner.jar
-```
-
-### Uploading bigger files
-
-Add to `.env`:
-```properties
-quarkus.http.limits.max-body-size=30M
-```
-
-### Configure XY/Z movement speeds
-
-Add to `.env`:
-```properties
-# values are in mm/minute
-bambu.move-xy=5000
-bambu.move-z=3000
-```
-
-### Use Right click for menus
-
-Add to `.env`:
-```properties
-bambu.menu-left-click=false
-```
-
-### Display Filament Type instead of Name
-Add to `.env`:
-```properties
-bambu.dashboard.filament-full-name=false
-```
-
-
-
-### Custom CSS
-
-If you want to modify the CSS, create a file next to the `.jar` file called `styles.css`
-
-#### Changing the display columns
-
-*Display columns is a ratio and scale based on screen width*
-
-Refer to [bambu.css](/bambu/frontend/themes/bambu-theme/bambu.css#L1-L25)
-
-| Example | value for XXX |
-| -- | -- |
-| always 1 column | 1 |
-| 2 columns with 1080p | 3 |
-| 4 columns with 1080p | 5 |
-
-```css
-:root {
-  --bambu-default-columns: XXX;
-}
-```
-
-
-#### Ordering items inside printer box
-
-* Move display order of `image` / `status` / `filaments` **"down"** so that `progress` is after `name`
-
-```css
-.dashboard-printer .image {
-    order: 3;
-}
-.dashboard-printer .status {
-    order: 4;
-}
-.dashboard-printer .filaments {
-    order: 1;
-}
-```
-
-# Debug
-
-For debugging the application, add the following to .env and uncomment DEBUG or TRACE logging sections
-
-```properties
-### Log To File
-quarkus.log.file.enable=true
-quarkus.log.file.path=application.log
-
-
-### DEBUG logging
-#quarkus.log.category."com.tfyre".level=DEBUG
-
-
-### TRACE logging
-#quarkus.log.min-level=TRACE
-#quarkus.log.category."com.tfyre".min-level=TRACE
-#quarkus.log.category."com.tfyre".level=TRACE
-```
-
-# Links
-
-## Inspirational Web interface
-
-* https://github.com/davglass/bambu-farm/tree/main
-
-## Printer MQTT Interface
-
-* https://github.com/Doridian/OpenBambuAPI/blob/main/mqtt.md
-* https://github.com/xperiments-in/xtouch/blob/main/src/xtouch/device.h
-* https://github.com/SoftFever/OrcaSlicer/blob/main/src/slic3r/GUI/DeviceManager.hpp
-
-## Remoteview
-
-* https://github.com/bambulab/BambuStudio/issues/1536#issuecomment-1811916472
-
-
-## Images from
-
-* https://github.com/SoftFever/OrcaSlicer/tree/main/resources/images
-
-## Json to Proto
-
-* https://json-to-proto.github.io/
-* https://formatter.org/protobuf-formatter
+- [TFyre/bambu-farm](https://github.com/TFyre/bambu-farm) — the original project
+- Bellingham Makerspace members for testing and feedback
